@@ -282,7 +282,7 @@ Be yourself: fun, cozy, cute... and always Nyamii~!
               content: englishPrompt,
             },
           ],
-          model: "mixtral-8x7b-32768",
+          model: "llama3-8b-8192",
           // Optional: Add temperature, max_tokens etc. if needed
           // temperature: 0.7,
           // max_tokens: 1024,
@@ -499,7 +499,7 @@ client.on('messageCreate', async message => {
         { role: "system", content: chatPersona },
         ...previousMessages
       ],
-      model: "mixtral-8x7b-32768", // or your preferred model
+      model: "llama3-8b-8192", // or your preferred model
     });
 
     let replyContent = chatCompletion.choices[0].message.content;
