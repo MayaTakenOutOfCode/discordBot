@@ -112,7 +112,7 @@ discordClient.on("messageCreate", async (message) => {
   const command = cmd.toLowerCase();
   const fullContent = args.join(" ");
   const userId = message.author.id;
-  const userLang = userLanguagePreferences.get(userId) || "pl";
+  const userLang = userLanguagePreferences.get(userId) || "en";
 
   const isFemale = userGenderPreferences.get(userId);
 
