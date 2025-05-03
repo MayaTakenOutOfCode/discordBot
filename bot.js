@@ -1,4 +1,19 @@
 require("dotenv").config();
+
+
+const { SlashCommandBuilder } = require("discord.js");
+
+
+const pingCommand = {
+  data: new SlashCommandBuilder()
+    .setName('ping')
+    .setDescription('Replies with Pong!'),
+  async execute(interaction) {
+    console.log('Ping command executed'); // Log to check if the command is run
+    await interaction.reply('Pong!');
+  },
+};
+
 const express = require("express");
 const { Client, GatewayIntentBits } = require("discord.js");
 const Groq = require("groq-sdk");
@@ -14,6 +29,8 @@ const discordClient = new Client({
     GatewayIntentBits.MessageContent,
   ],
 });
+
+
 
 const groqClient = new Groq({
   apiKey: process.env.GROQ_TOKEN,
