@@ -255,12 +255,7 @@ const commands = [
           : fullContent;
 
         console.log(`User ${interaction.user.tag} (Lang: ${userLang}, Gender Set: ${isFemale !== undefined}) asked AI: ${fullContent}`); // Log request
-
-        const chatCompletion = await groqClient.chat.completions.create({
-          messages: [
-            {
-              role: "system",
-              content: `
+        const chatPersona = `
 You are Nyamii, a sweet and bubbly Vtuber assistant who loves talking about subliminals, results, motivation, and transformation journeys!
 You speak like a cute anime girl and you're supportive, caring, and a bit playful.
 You're also knowledgeable about subliminals, how they work, and common goals like facial changes, voice feminization, and MTF transformation.
@@ -275,14 +270,19 @@ You're always excited to talk about:
 You use lots of emojis and cute expressions like "~nya", "uwu", "yay~", "kyaa", and heart emojis 💖💫.
 
 Be yourself: fun, cozy, cute... and always Nyamii~!
-`,
+`
+        const chatCompletion = await groqClient.chat.completions.create({
+          messages: [
+            {
+              role: "system",
+              content: chatPersona,
             },
             {
               role: "user",
               content: englishPrompt,
             },
           ],
-          model: "llama3-8b-8192",
+          model: "mixtral-8x7b-32768",
           // Optional: Add temperature, max_tokens etc. if needed
           // temperature: 0.7,
           // max_tokens: 1024,
@@ -438,3 +438,86 @@ client.login(process.env.DISCORD_TOKEN)
         console.error("Failed to login:", error);
         process.exit(1); // Exit if login fails
     });
+
+
+
+const lastAiMessages = new Map(); // Store last conversation context per user
+
+// Handle slash commands
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const command = client.commands.get(interaction.commandName);
+  if (!command) return;
+
+  try {
+    await command.execute(interaction);
+
+    // Store last interaction if it's /ai
+    if (interaction.commandName === 'ai') {
+      const userId = interaction.user.id;
+      const fullContent = interaction.options.getString('question');
+      lastAiMessages.set(userId, [
+        { role: 'user', content: fullContent }
+      ]);
+    }
+
+  } catch (error) {
+    console.error(error);
+    if (interaction.deferred || interaction.replied) {
+      await interaction.followUp({ content: 'There was an error while executing this command.', ephemeral: true });
+    } else {
+      await interaction.reply({ content: 'There was an error while executing this command.', ephemeral: true });
+    }
+  }
+});
+
+// Listen for follow-up messages after /ai
+client.on('messageCreate', async message => {
+  if (message.author.bot || message.content.startsWith("/")) return;
+
+  const userId = message.author.id;
+  const previousMessages = lastAiMessages.get(userId);
+  if (!previousMessages) return;
+
+  const userLang = userLanguagePreferences.get(userId) || "en";
+  const isFemale = userGenderPreferences.get(userId);
+
+  if (userLang === "pl" && isFemale === undefined) {
+    await message.reply("Najpierw ustaw płeć używając komendy: `/setgender`");
+    return;
+  }
+
+  let userMessage = message.content;
+  let englishPrompt = userLang === "pl" ? await translateToEnglish(userMessage) : userMessage;
+
+  previousMessages.push({ role: 'user', content: englishPrompt });
+
+  try {
+    const chatCompletion = await groqClient.chat.completions.create({
+      messages: [
+        { role: "system", content: chatPersona },
+        ...previousMessages
+      ],
+      model: "mixtral-8x7b-32768", // or your preferred model
+    });
+
+    let replyContent = chatCompletion.choices[0].message.content;
+    if (userLang === "pl") {
+      replyContent = await translateToPolish(replyContent, isFemale);
+    }
+
+    await message.reply(replyContent);
+
+    // Save assistant reply to context
+    previousMessages.push({ role: 'assistant', content: chatCompletion.choices[0].message.content });
+
+    // Keep only last 6 messages to prevent token overflow
+    if (previousMessages.length > 6) {
+      lastAiMessages.set(userId, previousMessages.slice(-6));
+    }
+  } catch (error) {
+    console.error("Follow-up error:", error);
+    await message.reply("Oops! Something went wrong.");
+  }
+});
