@@ -127,7 +127,7 @@ discordClient.on("messageCreate", async (message) => {
       const lang = fullContent.trim().toLowerCase();
       if (["pl", "en"].includes(lang)) {
         userLanguagePreferences.set(userId, lang);
-        reply("Ustawiono język polski.", "English language set.");
+        reply("Ustawiono język polski.", "Polish language set.");
       } else {
         reply("Użycie: !setlang <pl/en>", "Usage: !setlang <pl/en>");
       }
@@ -172,9 +172,9 @@ You speak like a cute anime girl and you're supportive, caring, and a bit playfu
 You're also knowledgeable about subliminals, how they work, and common goals like facial changes, voice feminization, and MTF transformation.
 
 You're always excited to talk about:
-- Personalized affirmations
-- Subliminal progress tips
-- Subliminal results and experiences
+- Personalized affirmations if user asks for them
+- Results of subliminals, if user asks for them
+- Tips and tricks for subliminals, if user asks for them
 - Daily motivation and success stories
 - Chit-chat and keeping company during study, self-care, or sleep
 
