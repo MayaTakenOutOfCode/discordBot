@@ -1,28 +1,23 @@
 require("dotenv").config();
-
-
-const { SlashCommandBuilder } = require("discord.js");
-
-
-const pingCommand = {
-  data: new SlashCommandBuilder()
-    .setName('ping')
-    .setDescription('Replies with Pong!'),
-  async execute(interaction) {
-    console.log('Ping command executed'); // Log to check if the command is run
-    await interaction.reply('Pong!');
-  },
-};
-
-const express = require("express");
-const { Client, GatewayIntentBits } = require("discord.js");
+const { 
+  Client, 
+  GatewayIntentBits, 
+  Collection, 
+  REST, 
+  Routes,
+  SlashCommandBuilder
+} = require("discord.js");
 const Groq = require("groq-sdk");
 const { translate } = require("@vitalets/google-translate-api");
+const express = require("express");
 
+// Initialize express server for keeping the bot alive
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
+app.get("/", (req, res) => res.send("Bot is running!"));
 
-const discordClient = new Client({
+// Create Discord client
+const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
@@ -30,34 +25,17 @@ const discordClient = new Client({
   ],
 });
 
+// Initialize collections
+client.commands = new Collection();
+const userGenderPreferences = new Map(); // true = female, false = male
+const userLanguagePreferences = new Map(); // 'pl' or 'en'
 
-
+// Create Groq client
 const groqClient = new Groq({
   apiKey: process.env.GROQ_TOKEN,
 });
 
-// Store user preferences
-const userGenderPreferences = new Map(); // true = female, false = male
-const userLanguagePreferences = new Map(); // 'pl' or 'en'
-
-discordClient.once("ready", () => {
-  console.log("I am ready!");
-  app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
-  });
-});
-
-app.get("/", (req, res) => res.send("Bot is running!"));
-
-const prefix = "!";
-const commandsList = {
-  ping: "[Test command] Replies with Pong!",
-  ai: "Fetches AI response. Usage: !ai <your question>",
-  help: "Displays list of available commands.",
-  setgender: "Set your gender for Polish. Usage: !setgender <f/m>",
-  setlang: "Set preferred language. Usage: !setlang <pl/en>",
-};
-
+// Helper Functions
 async function translateToPolish(text, isFemale) {
   try {
     let translatedText = await translate(text, { to: "pl" });
@@ -98,7 +76,7 @@ async function translateToEnglish(text) {
   }
 }
 
-async function sendLongMessage(message, content) {
+async function sendLongMessage(interaction, content) {
   const maxLength = 1900;
   const chunks = [];
 
@@ -112,73 +90,107 @@ async function sendLongMessage(message, content) {
     content = content.slice(chunk.length);
   }
 
-  for (const chunk of chunks) {
-    await message.reply(chunk);
+  // First chunk sent as reply
+  await interaction.reply(chunks[0]);
+  
+  // Any additional chunks sent as followup
+  for (let i = 1; i < chunks.length; i++) {
+    await interaction.followUp(chunks[i]);
   }
 }
 
-discordClient.on("messageCreate", async (message) => {
-  if (
-    !message.content.startsWith(prefix) ||
-    message.author.bot ||
-    !message.guild
-  )
-    return;
-
-  const [cmd, ...args] = message.content.slice(prefix.length).split(/\s+/);
-  const command = cmd.toLowerCase();
-  const fullContent = args.join(" ");
-  const userId = message.author.id;
-  const userLang = userLanguagePreferences.get(userId) || "en";
-
-  const isFemale = userGenderPreferences.get(userId);
-
-  const reply = (pl, en) => message.reply(userLang === "pl" ? pl : en);
-
-  switch (command) {
-    case "ping":
-      reply("Pong!", "Pong!");
-      break;
-
-    case "setlang":
-      const lang = fullContent.trim().toLowerCase();
-      if (["pl", "en"].includes(lang)) {
-        userLanguagePreferences.set(userId, lang);
-        reply("Ustawiono język polski.", "Polish language set.");
-      } else {
-        reply("Użycie: !setlang <pl/en>", "Usage: !setlang <pl/en>");
-      }
-      break;
-
-    case "setgender":
-      const gender = fullContent.trim().toLowerCase();
-      if (["f", "m"].includes(gender)) {
-        userGenderPreferences.set(userId, gender === "f");
-        reply(
-          `Ustawiono płeć jako ${gender === "f" ? "kobieta" : "mężczyzna"}.`,
-          `Gender set to ${gender === "f" ? "female" : "male"}.`
-        );
-      } else {
-        reply("Użycie: !setgender <f/m>", "Usage: !setgender <f/m>");
-      }
-      break;
-
-    case "ai":
-      if (!fullContent.trim()) {
-        reply("Użyj: !ai <treść pytania>", "Usage: !ai <your question>");
-        return;
-      }
+// Define slash commands
+const commands = [
+  {
+    data: new SlashCommandBuilder()
+      .setName('ping')
+      .setDescription('Replies with Pong!'),
+    async execute(interaction) {
+      console.log('Ping command executed');
+      await interaction.reply('Pong!');
+    },
+  },
+  {
+    data: new SlashCommandBuilder()
+      .setName('setlang')
+      .setDescription('Set your preferred language')
+      .addStringOption(option =>
+        option.setName('language')
+          .setDescription('The language to use')
+          .setRequired(true)
+          .addChoices(
+            { name: 'English', value: 'en' },
+            { name: 'Polish', value: 'pl' }
+          )),
+    async execute(interaction) {
+      const userId = interaction.user.id;
+      const lang = interaction.options.getString('language');
+      userLanguagePreferences.set(userId, lang);
+      
+      const userLang = userLanguagePreferences.get(userId);
+      const response = userLang === "pl" 
+        ? "Ustawiono język polski." 
+        : "English language set.";
+      
+      await interaction.reply(response);
+    },
+  },
+  {
+    data: new SlashCommandBuilder()
+      .setName('setgender')
+      .setDescription('Set your gender for Polish responses')
+      .addStringOption(option =>
+        option.setName('gender')
+          .setDescription('Your gender')
+          .setRequired(true)
+          .addChoices(
+            { name: 'Female', value: 'f' },
+            { name: 'Male', value: 'm' }
+          )),
+    async execute(interaction) {
+      const userId = interaction.user.id;
+      const gender = interaction.options.getString('gender');
+      userGenderPreferences.set(userId, gender === "f");
+      
+      const userLang = userLanguagePreferences.get(userId) || "en";
+      const response = userLang === "pl"
+        ? `Ustawiono płeć jako ${gender === "f" ? "kobieta" : "mężczyzna"}.`
+        : `Gender set to ${gender === "f" ? "female" : "male"}.`;
+      
+      await interaction.reply(response);
+    },
+  },
+  {
+    data: new SlashCommandBuilder()
+      .setName('ai')
+      .setDescription('Get a response from Nyamii')
+      .addStringOption(option =>
+        option.setName('question')
+          .setDescription('Your question or message for Nyamii')
+          .setRequired(true)),
+    async execute(interaction) {
+      const userId = interaction.user.id;
+      const fullContent = interaction.options.getString('question');
+      const userLang = userLanguagePreferences.get(userId) || "en";
+      const isFemale = userGenderPreferences.get(userId);
 
       if (isFemale === undefined) {
-        reply(
-          "Najpierw ustaw płeć: !setgender <f/m>",
-          "Please set your gender first: !setgender <f/m>"
-        );
+        const response = userLang === "pl"
+          ? "Najpierw ustaw płeć: /setgender"
+          : "Please set your gender first: /setgender";
+        
+        await interaction.reply(response);
         return;
       }
 
+      // Defer the reply to give us time to process the AI response
+      await interaction.deferReply();
+
       try {
-        const englishPrompt = await translateToEnglish(fullContent);
+        const englishPrompt = userLang === "pl" 
+          ? await translateToEnglish(fullContent) 
+          : fullContent;
+        
         const chatCompletion = await groqClient.chat.completions.create({
           messages: [
             {
@@ -209,34 +221,92 @@ Be yourself: fun, cozy, cute... and always Nyamii~!
         });
 
         const aiReply = chatCompletion.choices[0].message.content;
-        const finalReply =
-          userLang === "pl"
-            ? await translateToPolish(aiReply, isFemale)
-            : aiReply;
+        const finalReply = userLang === "pl"
+          ? await translateToPolish(aiReply, isFemale)
+          : aiReply;
 
-        await sendLongMessage(message, finalReply);
+        await sendLongMessage(interaction, finalReply);
       } catch (error) {
         console.error("AI error:", error);
-        reply("Wystąpił błąd!", "An error occurred!");
+        const errorMsg = userLang === "pl" ? "Wystąpił błąd!" : "An error occurred!";
+        await interaction.editReply(errorMsg);
       }
-      break;
-
-    case "help":
+    },
+  },
+  {
+    data: new SlashCommandBuilder()
+      .setName('help')
+      .setDescription('Displays list of available commands'),
+    async execute(interaction) {
+      const userId = interaction.user.id;
+      const userLang = userLanguagePreferences.get(userId) || "en";
+      
+      const title = userLang === "pl" ? "Dostępne komendy:" : "Available commands:";
+      
+      const commandsList = {
+        ping: userLang === "pl" ? "[Komenda testowa] Odpowiada Pong!" : "[Test command] Replies with Pong!",
+        ai: userLang === "pl" ? "Uzyskaj odpowiedź AI. Użycie: /ai pytanie" : "Fetches AI response. Usage: /ai question",
+        help: userLang === "pl" ? "Wyświetla listę dostępnych komend." : "Displays list of available commands.",
+        setgender: userLang === "pl" ? "Ustaw swoją płeć dla języka polskiego. Użycie: /setgender" : "Set your gender for Polish. Usage: /setgender",
+        setlang: userLang === "pl" ? "Ustaw preferowany język. Użycie: /setlang" : "Set preferred language. Usage: /setlang",
+      };
+      
       const list = Object.entries(commandsList)
-        .map(([cmd, desc]) => `**${prefix}${cmd}**: ${desc}`)
+        .map(([cmd, desc]) => `**/${cmd}**: ${desc}`)
         .join("\n");
-      const title =
-        userLang === "pl" ? "Dostępne komendy:" : "Available commands:";
-      message.reply(`${title}\n${list}`);
-      break;
+      
+      await interaction.reply(`${title}\n${list}`);
+    },
+  },
+];
 
-    default:
-      reply(
-        `Nieznana komenda. Użyj \`${prefix}help\` by zobaczyć listę.`,
-        `Unknown command. Use \`${prefix}help\` to see the list.`
-      );
-      break;
+// Register commands with Discord
+const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+
+(async () => {
+  try {
+    console.log('Started refreshing application (/) commands.');
+
+    await rest.put(
+      Routes.applicationCommands(process.env.CLIENT_ID),
+      { body: commands.map(command => command.data.toJSON()) },
+    );
+
+    console.log('Successfully reloaded application (/) commands.');
+  } catch (error) {
+    console.error(error);
+  }
+})();
+
+// Add each command to the collection
+for (const command of commands) {
+  client.commands.set(command.data.name, command);
+}
+
+// Event Handlers
+client.once('ready', () => {
+  console.log(`Logged in as ${client.user.tag}!`);
+  app.listen(port, () => {
+    console.log(`Server is running on port ${port}`);
+  });
+});
+
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isCommand()) return;
+
+  const command = client.commands.get(interaction.commandName);
+  if (!command) return;
+
+  try {
+    await command.execute(interaction);
+  } catch (error) {
+    console.error(error);
+    await interaction.reply({ 
+      content: 'There was an error while executing this command!', 
+      ephemeral: true 
+    });
   }
 });
 
-discordClient.login(process.env.DISCORD_TOKEN);
+// Login to Discord
+client.login(process.env.DISCORD_TOKEN);
