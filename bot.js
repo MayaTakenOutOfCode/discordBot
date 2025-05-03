@@ -433,11 +433,6 @@ client.on('interactionCreate', async interaction => {
 
 
 // --- Login to Discord ---
-client.login(process.env.DISCORD_TOKEN)
-    .catch(error => {
-        console.error("Failed to login:", error);
-        process.exit(1); // Exit if login fails
-    });
 
 
 
@@ -521,3 +516,11 @@ client.on('messageCreate', async message => {
     await message.reply("Oops! Something went wrong.");
   }
 });
+
+
+client.login(process.env.DISCORD_TOKEN)
+    .catch(error => {
+        console.error("Failed to login:", error);
+        process.exit(1); // Exit if login fails
+    });
+
