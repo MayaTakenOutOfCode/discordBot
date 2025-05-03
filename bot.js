@@ -260,37 +260,12 @@ Be yourself: fun, cozy, cute... and always Nyamii~!
   },
 ];
 
-// Register commands with Discord
-const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-
-(async () => {
-  try {
-    console.log('Started refreshing application (/) commands.');
-
-    await rest.put(
-      Routes.applicationCommands(process.env.CLIENT_ID),
-      { body: commands.map(command => command.data.toJSON()) },
-    );
-
-    console.log('Successfully reloaded application (/) commands.');
-  } catch (error) {
-    console.error(error);
-  }
-})();
-
 // Add each command to the collection
 for (const command of commands) {
   client.commands.set(command.data.name, command);
 }
 
 // Event Handlers
-client.once('ready', () => {
-  console.log(`Logged in as ${client.user.tag}!`);
-  app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
-  });
-});
-
 client.on('interactionCreate', async interaction => {
   if (!interaction.isCommand()) return;
 
@@ -305,6 +280,38 @@ client.on('interactionCreate', async interaction => {
       content: 'There was an error while executing this command!', 
       ephemeral: true 
     });
+  }
+});
+
+// Key change: Move command registration to after client is ready
+// This ensures we have the proper client connection before registering
+client.once('ready', async () => {
+  console.log(`Logged in as ${client.user.tag}!`);
+  
+  try {
+    console.log('Started refreshing application (/) commands.');
+    
+    // Use guild commands for faster development if GUILD_ID is provided
+    if (process.env.GUILD_ID) {
+      await rest.put(
+        Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+        { body: commands.map(command => command.data.toJSON()) },
+      );
+      console.log(`Successfully registered commands to guild ${process.env.GUILD_ID}`);
+    } else {
+      // Global command registration
+      await rest.put(
+        Routes.applicationCommands(process.env.CLIENT_ID),
+        { body: commands.map(command => command.data.toJSON()) },
+      );
+      console.log('Successfully registered global commands');
+    }
+    
+    app.listen(port, () => {
+      console.log(`Server is running on port ${port}`);
+    });
+  } catch (error) {
+    console.error('Error registering commands:', error);
   }
 });
 
